@@ -73,5 +73,5 @@ If you don't know your *Telegram User ID* you can follow these steps:
 ![image](https://github.com/RubenChirino/harvest-bot/assets/52714843/30701fe0-0bed-42a4-a4f4-819e28b182c1)
 
 
-
+To see it in action you can go to the [use-cases.md](https://github.com/RubenChirino/harvest-bot/blob/main/use-cases.md) file.
 
