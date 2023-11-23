@@ -160,6 +160,16 @@ This document outlines various use cases and commands for interacting with the H
 
 ### Watering schedule fulfilled (Watering is carried out to the plant) 
 
+https://drive.google.com/uc?export=view&id=1nVHGa5SZevOzWCjtWWBDOGvcYDiavQxv
+
+### Do watering by command
+
+<div align="center">
+  <video src="https://github.com/RubenChirino/harvest-bot/assets/52714843/dde6fa7e-1043-4058-9300-148cc272f417" controls>
+    Your browser does not support the video tag.
+  </video>
+</div>
+
 ### Reminder schedule fulfilled (The reminder is sent to all users on the whitelist)
 
 The video shows that the reminder reaches two different users.
