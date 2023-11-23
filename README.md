@@ -18,6 +18,8 @@ This repository contains code for an Automated Watering System Bot, designed to 
 
 ![image](https://github.com/RubenChirino/harvest-bot/assets/52714843/630fa9b2-3a95-4419-9262-07611ba960a7)
 
+![setup](https://github.com/RubenChirino/harvest-bot/assets/52714843/6ec81763-2d2b-4af6-b7d2-f6ec871ea18d)
+
 ## Getting Started 
 
 To get the system up and running, follow these steps:
