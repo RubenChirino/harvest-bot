@@ -6,7 +6,10 @@
 #include <ArduinoJson.h>
 
 // -------- SENSORS ------
-#define SENSOR_HUMIDITY_PIN 36
+const int SENSOR_HUMIDITY_PIN = 34;
+#define SENSOR_LDR_PIN 33
+#define RELAY_PIN 23
+bool relayState = LOW;
 
 // -------- Wi-Fi Details ----------
 const char* ssid = "XXX";
@@ -34,6 +37,7 @@ unsigned long lastTimeBotRan;
 unsigned long lastWatering = 0;
 unsigned long wateringInterval = 0; // Miliseconds
 bool isRecurringWateringEnabled = false;
+unsigned long wateringTime = 3; // Seconds
 
 struct ScheduleStructure {
   bool days[7]; // Sunday = 0, Monday = 1, Tuesday = 2, ..., Saturday = 6
@@ -55,14 +59,18 @@ String pendingScheduleCommand = "";
 String pendingReminderText = "";
 
 // ESP32 Led
-const int ledPin = 2;
+const int LED_PIN = 2;
 bool ledState = LOW;
 
 void setup() {
   Serial.begin(9600);
 
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, ledState);
+  pinMode(SENSOR_LDR_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+
+  digitalWrite(LED_PIN, ledState);
+  digitalWrite(RELAY_PIN, relayState);
 
   connectToWifi();
 
@@ -77,18 +85,21 @@ void loop() {
 
   // Watering Triggers
   if (checkWateringRecurring()) {
-    handleWatering();
+    handleWatering(true);
     lastWatering = millis();
   }
   
   if (checkSchedule(wateringSchedule)) {
-    handleWatering();
+    handleWatering(true);
   }
   // ---------------
 
   if (checkSchedule(reminderSchedule)) {
-    sendReminder(reminderSchedule.text);
+    notifyAllUsers(reminderSchedule.text);
   }
+
+  /* delay(5000);                   
+  toggleRelay(); */
 }
 
 //  ----- Functions -----
@@ -152,45 +163,50 @@ void handleNewMessages(int numNewMessages) {
 
     // ---- Commands 
     String startCommand = "/start";
-    String setRecurringWateringCommand = "/set_recurring_watering_interval ";
-    String stopRecurringWateringCommand = "/stop_recurring_watering_interval";
+    String setRecurrigWateringCommand = "/set_recurring_watering_interval ";
+    String stopRecurrigWateringCommand = "/stop_recurring_watering_interval";
     String setWateringScheduleCommand = "/set_watering_schedule ";
     String setReminderScheduleCommand = "/set_reminder_schedule ";
     String getSoilMoistureCommand = "/soil_moisture";
+    String getLightLevelCommand = "/light_level";
     String setLedOnCommand = "/led_on";
     String setLedOffCommand = "/led_off";
     String ledStateCommand = "/led_state";
     String schedulesStateCommand = "/schedules_state";
     String stopWateringScheduleCommand = "/stop_watering_schedule";
     String stopReminderScheduleCommand = "/stop_reminder_schedule";
+    String setWateringTimeCommand = "/set_watering_time ";
+    String doWatering = "/do_watering";
 
     // ---- Welcome -----
     if (text == startCommand && message == "") {
         String welcome = "🌱🤖 Welcome to Harvest Guardian, " + userName + "! 🌿🌞\n\n";
-        welcome += "I'm here to help you automate and monitor your *plant watering and care system*. Let's make your gardening journey easier and more fun! 🌼💧🌻\n\n";
+        welcome += "I'm here to help you automate and monitor your *plant watering and care system* 🌼💧🌻\n\n";
         welcome += "Here are some commands you can use to control your outputs and watering system:\n\n";
         // Commands
         welcome += "*Actions*\n";
-        welcome += setRecurringWateringCommand + "[hours] - Sets the automatic watering interval. For example, 5 will start watering every five hours. ⏱️🌊\n";
-        welcome += stopRecurringWateringCommand + " - Stops the automatic watering system. 🛑💧\n";
+        welcome += setRecurrigWateringCommand + "[hours] - Sets the automatic watering interval. For example, 5 will start watering every five hours. ⏱️🌊\n";
+        welcome += stopRecurrigWateringCommand + " - Stops the automatic watering system. 🛑💧\n";
         welcome += setWateringScheduleCommand + "[Days] [Time] - Sets a specific watering schedule. For example, Monday,Wednesday,Friday 18:00 will set the watering at 6:00 PM on these days. 📅⏰\n";
         welcome += stopWateringScheduleCommand + " - Cancels the current watering schedule. 🚫💧\n";
         welcome += setReminderScheduleCommand + "[Days] [Time] [Text] - Sets a specific reminder schedule. For example, Monday,Thursday 08:00 Water the orchids will remind you to water the orchids at 8:00 AM on Mondays and Thursdays. 📆🌸🕗\n";
-        welcome += stopReminderScheduleCommand + " - Cancels the current reminder schedule. 🚫🔔\n\n";
+        welcome += stopReminderScheduleCommand + " - Cancels the current reminder schedule. 🚫🔔\n";
+        welcome += setWateringTimeCommand + "[seconds] - Sets the watering duration for each cycle. ⏱️💧\n\n";
         welcome += "*Records*\n";
         welcome += schedulesStateCommand + " - Get the active schedules and the remaining times to execute them.\n";
-        welcome += getSoilMoistureCommand + " - Get the current soil moisture level.\n\n";
+        welcome += getSoilMoistureCommand + " - Get the current soil moisture level. 💧🔍\n";
+        welcome += getLightLevelCommand + " - Reports the current light level detected by the LDR sensor. 🌞🔍\n\n";
         // Test Commands
-        /* welcome += setLedOnCommand + " - Turns the LED ON. 💡🔛\n";
-        welcome += setLedOffCommand + " - Turns the LED OFF. 💡🔚\n";
-        welcome += ledStateCommand + " - Requests the current state of the LED. 🔍💡\n"; */
-        welcome += "Feel free to reach out with these commands anytime you need. Let's keep your plants thriving together! 🌺🌵🌼\n";
+        /* welcome += setLedOnCommand + " - Turns the LED (or another GPIO) ON. 💡🔛\n";
+        welcome += setLedOffCommand + " - Turns the LED (or another GPIO) OFF. 💡🔚\n";
+        welcome += ledStateCommand + " - Requests the current state of the LED (or another GPIO). 🔍💡\n"; */
+        welcome += "Feel free to reach out with these commands anytime you need. 🌺🌵🌼\n";
         message = welcome;
     }
 
     // ---- Actions -----
-    if (text.startsWith(setRecurringWateringCommand) && message == "") {
-        String intervalStr = text.substring(setRecurringWateringCommand.length());
+    if (text.startsWith(setRecurrigWateringCommand) && message == "") {
+        String intervalStr = text.substring(setRecurrigWateringCommand.length());
         Serial.println("Hours: " + intervalStr);
         int intervalHours = intervalStr.toInt();
         if (intervalHours < 12) {
@@ -208,18 +224,13 @@ void handleNewMessages(int numNewMessages) {
         }
     }
 
-    if (text == stopRecurringWateringCommand && message == "") {
+    if (text == stopRecurrigWateringCommand && message == "") {
         if (isRecurringWateringEnabled) {
             isRecurringWateringEnabled = false;
             message = "🌿 The automatic watering interval has been stopped.\nYour plants will now rely on your personal touch for their hydration needs! 💦";
         } else {
             message = "🤔 It seems like there's no active watering interval to stop.\nTo set one up, use '/set_recurring_watering_interval [hours]'. Let's keep those plants happy! 🌱";
         }
-    }
-
-    if (text == getSoilMoistureCommand && message == "") {
-        float soilMoisture = getSoilMoisture();
-        message = "🌱 The current soil moisture level is at " + String(soilMoisture) + "%.\n\nKeep an eye on it to ensure your plants are getting just the right amount of water! 💧🌼";
     }
 
     if (text.startsWith(setWateringScheduleCommand) && message == "") {
@@ -273,6 +284,17 @@ void handleNewMessages(int numNewMessages) {
       }
     }
 
+    // ---- Commands -----
+    if (text == getSoilMoistureCommand && message == "") {
+        float soilMoisture = getSoilMoisture();
+        message = "🌱 The current soil moisture level is at " + String(soilMoisture) + "%.\n\nKeep an eye on it to ensure your plants are getting just the right amount of water! 💧🌼";
+    }
+
+    if (text == getLightLevelCommand && message == "") {
+        int lightLevel = getLightLevel();
+        message = "🌞 The current light level is at " + String(lightLevel) + "%.";
+    }
+
     if (text == schedulesStateCommand && message == "") {
         message = "🌿 Here are your current schedules:\n\n";
 
@@ -300,24 +322,40 @@ void handleNewMessages(int numNewMessages) {
         message += "Keep an eye on your schedules to stay on top of your gardening! 🌱💦";
     }
 
+    if (text.startsWith(setWateringTimeCommand) && message == "") {
+        String timeStr = text.substring(setWateringTimeCommand.length());
+        int timeSeconds = timeStr.toInt();
+        if (timeSeconds <= 0) {
+            message = "🌼 Oops! Please enter a valid number of seconds for watering.";
+        } else {
+            wateringTime = timeSeconds;
+            message = "🌱 Watering time set to " + String(wateringTime) + " seconds.";
+        }
+    }
+
     // ---- Test Commands ----
+    if (text == doWatering && message == "") {
+      message = "Doing watering 👌";
+      handleWatering(false);
+    }
+
     if (text == setLedOnCommand && message == "") {
-      message = "LED state set to ON";
+      message = "LED state set to ON 👌";
       ledState = HIGH;
-      digitalWrite(ledPin, ledState);
+      digitalWrite(LED_PIN, ledState);
     }
 
     if (text == setLedOffCommand && message == "") {
-      message = "LED state set to OFF";
+      message = "LED state set to OFF 👌";
       ledState = LOW;
-      digitalWrite(ledPin, ledState);
+      digitalWrite(LED_PIN, ledState);
     }
 
     if (text == ledStateCommand && message == "") {
-      if (digitalRead(ledPin)){
-        message = "LED is ON";
+      if (digitalRead(LED_PIN)){
+        message = "LED is ON 👌";
       } else {
-        message = "LED is OFF";
+        message = "LED is OFF 👌";
       }
     }
     // --------
@@ -339,13 +377,15 @@ void handleNewMessages(int numNewMessages) {
   Serial.println("");
 }
 
-void handleWatering() {
-    Serial.println("Doing watering...");
-    // digitalWrite(9, HIGH);
+void handleWatering(bool notify) {
+    if (notify) {
+      notifyAllUsers("Doing watering 🌼💧🌻");
+    }
+    Serial.println("Doing watering 🌼💧🌻");
     Serial.println("");
-    delay(10000); // Watering Time
-    // digitalWrite(9, LOW);
-    // isRecurringWateringEnabled = false;
+    digitalWrite(RELAY_PIN, HIGH);
+    delay(wateringTime * 1000); // Convert seconds to milliseconds
+    digitalWrite(RELAY_PIN, LOW);
 }
 
 void checkNewMessages() {
@@ -390,8 +430,8 @@ bool checkSchedule(ScheduleStructure& schedule) {
 
 // ------ Actions -----
 
-void sendReminder(String text) {
-  // Send the reminder to all the Authorized users
+// Send message to all the Whitelist Users
+void notifyAllUsers(String text) {
   for (int i = 0; i < authorizedChatsCount; i++) {
     bot.sendMessage(String(authorizedChatIDs[i]), text, "");
   }
@@ -408,12 +448,24 @@ void cleanSchedule(ScheduleStructure& schedule) {
   pendingScheduleCommand = "";
 }
 
+void toggleRelay() {
+  relayState = !relayState;
+  digitalWrite(RELAY_PIN, relayState);
+  Serial.println(relayState ? "Relay ON" : "Relay OFF");
+}
+
 // ----- Getters & Setters -----
 
 float getSoilMoisture() {
-  int sensorValue = analogRead(SENSOR_HUMIDITY_PIN); 
+  int sensorValue = analogRead(SENSOR_HUMIDITY_PIN);
   float humidity = (sensorValue / 4095.0) * 100.0;
   return humidity;
+}
+
+float getLightLevel() {
+  int sensorValue = analogRead(SENSOR_LDR_PIN);
+  float light = (sensorValue / 4095.0) * 100.0;
+  return light;
 }
 
 String getScheduleDays(const ScheduleStructure& schedule) {
@@ -578,16 +630,6 @@ String setSchedule(String scheduleCommand, ScheduleStructure& schedule) {
      schedule.alreadyExecuted = true;
      schedule.lastDayChecked = currentDay;
   } 
-  // If the set time is for a future time on the same day
-  // make sure it is not marked as already executed
-  /* else if(schedule.days[currentDay] && 
-     (schedule.hour > currentHour || (schedule.hour == currentHour && schedule.minute > currentMinute))) {
-      schedule.alreadyExecuted = false;
-  } */
-  // For all other cases (future schedules on future days)
-  /* else {
-      schedule.alreadyExecuted = false;
-  } */
 
   // LOG line
   printScheduleInfo(schedule);
